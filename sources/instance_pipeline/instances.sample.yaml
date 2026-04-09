@@ -15,14 +15,18 @@ familyName: "Mona Sans Fork"
 #   ital: { min: 0, max: 1 }
 
 # Default instances loaded on every run.
+# Can be run without any flags: `python build_instances.py`
+# During exploration: keep this empty
+# instances: []
 instances:
   - name: "Fork Trial RegularText"
-    location: { wdth: 100, wght: 150, opsz: 16, ital: 0 }
+    location: { wdth: 100, wght: 200, opsz: 16, ital: 0 }
 
+## python build_instances.py --preset mood_soft
 presets:
   mood_soft:
     - name: "Fork Soft Condensed Light"
-      location: { wdth: 90, wght: 150, opsz: 14, ital: 0 }
+      location: { wdth: 90, wght: 200, opsz: 14, ital: 0 }
     - name: "Fork Soft Regular"
       location: { wdth: 100, wght: 250, opsz: 16, ital: 0 }
     - name: "Fork Soft Expanded Semibold"

@@ -67,3 +67,47 @@ By default, outputs are written to:
 - If you use custom `bounds` in YAML, they can only narrow axis ranges, not expand them.
 - Default script behavior disables autohinting and overlap removal for cleaner iteration.
 
+## Additional Notes
+
+The distinction between instances and presets is intentional but the naming is not obvious. Here's the difference:
+
+|                 | instances block                                     | presets block                                           |
+|-----------------|-----------------------------------------------------|---------------------------------------------------------|
+| **When loaded** | Every run, unconditionally                          | Only when you pass --preset NAME                        |
+| **Purpose**     | Your confirmed masters — the ones you've settled on | Experimental groups you can switch between while tuning |
+| **Activation**  | Automatic                                           | --preset mood_soft                                      |
+
+The intended workflow is:
+
+```
+Trial phase          →   --instance "Name:wdth=100,wght=150,..."  (no config edit needed)
+Grouping for tests   →   presets in YAML, activated with --preset
+Confirmed & stable   →   graduate to instances block (always built)
+```
+
+So in practice:
+
+```
+# Exploring: nothing in instances yet, just test a preset
+python build_instances.py --preset mood_soft
+
+# Override one axis across the whole preset without editing YAML
+python build_instances.py --preset mood_soft --set wght=180
+
+# Confirmed a value: move it to `instances:` so it always builds
+# from now on without any flags
+python build_instances.py
+```
+
+That said — if having both blocks feels redundant right now (since nothing is confirmed yet), you can simply leave
+instances: empty and only use presets. The instances block is just a convenience for when you're past the exploration
+phase and want a default set that always builds.
+
+```
+# During exploration: keep this empty
+instances: []
+
+presets:
+  mood_soft:
+    ...
+```
