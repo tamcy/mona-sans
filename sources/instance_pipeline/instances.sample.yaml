@@ -1,0 +1,40 @@
+# Custom instance config for sources/instance_pipeline/build_instances.py
+#
+# Notes:
+# - Axis values are interpreted in USER space and validated against designspace bounds.
+# - Out-of-range values fail hard.
+# - Use presets for repeatable named test sets.
+
+familyName: "Mona Sans Fork"
+
+# Optional: narrow bounds (cannot exceed designspace bounds).
+# bounds:
+#   wdth: { min: 75, max: 125 }
+#   wght: { min: 100, max: 900 }
+#   opsz: { min: 12, max: 32 }
+#   ital: { min: 0, max: 1 }
+
+# Default instances loaded on every run.
+instances:
+  - name: "Fork Trial RegularText"
+    location: { wdth: 100, wght: 150, opsz: 16, ital: 0 }
+
+presets:
+  mood_soft:
+    - name: "Fork Soft Condensed Light"
+      location: { wdth: 90, wght: 150, opsz: 14, ital: 0 }
+    - name: "Fork Soft Regular"
+      location: { wdth: 100, wght: 250, opsz: 16, ital: 0 }
+    - name: "Fork Soft Expanded Semibold"
+      location: { wdth: 112.5, wght: 580, opsz: 18, ital: 0 }
+
+  mood_display:
+    - name: "Fork Display Condensed Bold"
+      location: { wdth: 87.5, wght: 700, opsz: 36, ital: 0 }
+    - name: "Fork Display Expanded Black"
+      location: { wdth: 120, wght: 850, opsz: 40, ital: 0 }
+
+  mood_italic_probe:
+    - name: "Fork Italic Probe"
+      location: { wdth: 100, wght: 300, opsz: 16, ital: 1 }
+
