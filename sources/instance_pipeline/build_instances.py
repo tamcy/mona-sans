@@ -477,16 +477,16 @@ def main() -> int:
         verify_features_files(expected_ufo_paths)
 
     # ------------------------------------------------------------------ #
-    # Step 4 – inject feature kern from kerning/groups plists              #
+    # Step 4 -- merge kern pairs into features.fea.merged                 #
     # ------------------------------------------------------------------ #
     if not args.dry_run and not args.skip_kern_inject:
-        print("\nInjecting kern feature into instance UFOs …")
+        print("\nMerging kern feature into instance UFOs ...")
         existing = [p for p in expected_ufo_paths if p.is_dir()]
         if len(existing) > 1:
             check_kern_structure_consistency(existing)
         for ufo_path in existing:
-            print(f"  Processing {ufo_path.name} …")
-            inject_kern_feature(ufo_path, force=args.force_kern_inject)
+            print(f"  Processing {ufo_path.name} ...")
+            inject_kern_feature(ufo_path, force=args.force_kern_inject, out_suffix=".merged")
 
     print(f"Wrote custom designspace: {custom_designspace}")
     print(f"Instance UFO directory: {final_instance_dir}")
