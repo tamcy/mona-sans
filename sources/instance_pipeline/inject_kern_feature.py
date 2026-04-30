@@ -1,21 +1,21 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Inject a ``feature kern {}`` block into each instance UFO's features.fea.
 
 UFO kerning data is stored in ``kerning.plist`` (pair values) and
 ``groups.plist`` (kern-side class members).  When fontmake interpolates
 instance UFOs without ``--expand-features-to-instances``, it copies the
-master's ``features.fea`` verbatim but does NOT generate a kern feature ??
+master's ``features.fea`` verbatim but does NOT generate a kern feature --
 kerning values live in the plist files.
 
 This script reads those plists and appends a ``feature kern {}`` block to
 ``features.fea``.  The generated block uses OpenType FEA class-pair
 positioning (``@kern1_XXX / @kern2_XXX``), which is:
 
-* **Multi-master compatible** ??all masters share identical class definitions
+* Multi-master compatible -- all masters share identical class definitions
   and pair structure; only the numeric values differ across interpolation
   steps.
-* **Merge-friendly** ??class names are prefixed so they don't collide with
-  groups in the target font.
+* Merge-friendly -- class names use the standard UFO naming convention so
+  they are easy to identify and namespace if needed.
 
 Usage (standalone)::
 
@@ -51,8 +51,8 @@ def _load_plist(path: Path) -> dict:
 def _fea_class_name(group_key: str) -> str:
     """Map a UFO public.kern group key to a FEA class name.
 
-    ``public.kern1.KO_A``  ?? ``@kern1_KO_A``
-    ``public.kern2.KO_V``  ?? ``@kern2_KO_V``
+    ``public.kern1.KO_A``  ->  ``@kern1_KO_A``
+    ``public.kern2.KO_V``  ->  ``@kern2_KO_V``
     """
     if group_key.startswith("public.kern1."):
         return "@kern1_" + group_key[len("public.kern1."):]
@@ -76,7 +76,7 @@ def build_kern_fea(groups: dict, kerning: dict) -> str:
     str
         FEA text ready to be appended to ``features.fea``.
     """
-    kern1: Dict[str, List[str]] = {}  # group_key ??[glyph, ...]
+    kern1: Dict[str, List[str]] = {}  # group_key -> [glyph, ...]
     kern2: Dict[str, List[str]] = {}
 
     for key, glyphs in groups.items():
@@ -87,10 +87,7 @@ def build_kern_fea(groups: dict, kerning: dict) -> str:
 
     lines: List[str] = []
 
-    # ------------------------------------------------------------------ #
-    # 1. Class definitions (outside the feature block so they can be      #
-    #    referenced by other features if needed).                          #
-    # ------------------------------------------------------------------ #
+    # -- 1. Class definitions (outside the feature block) --
     if kern1:
         lines.append("# Kern side 1 (left-side) groups")
         for key in sorted(kern1):
@@ -107,12 +104,10 @@ def build_kern_fea(groups: dict, kerning: dict) -> str:
             lines.append(f"{fea} = [{members}];")
         lines.append("")
 
-    # ------------------------------------------------------------------ #
-    # 2. Parse kerning pairs into three buckets:                           #
-    #    ??glyph?�glyph  (format-1 exceptions, highest lookup priority)    #
-    #    ??glyph?�class  or  class?�glyph  (mixed; emitted with enumerate)  #
-    #    ??class?�class  (format-2, main lookup)                            #
-    # ------------------------------------------------------------------ #
+    # -- 2. Parse kerning pairs into three buckets --
+    #    glyph-glyph  : format-1 exceptions, highest lookup priority
+    #    mixed        : glyph-class or class-glyph, emitted with enumerate
+    #    cls_cls      : class-class, format-2 main lookup
     glyph_glyph: List[Tuple[str, str, int]] = []
     mixed:       List[Tuple[str, str, int]] = []
     cls_cls:     List[Tuple[str, str, int]] = []
@@ -141,9 +136,7 @@ def build_kern_fea(groups: dict, kerning: dict) -> str:
     mixed.sort()
     cls_cls.sort()
 
-    # ------------------------------------------------------------------ #
-    # 3. Build the feature block                                           #
-    # ------------------------------------------------------------------ #
+    # -- 3. Build the feature block --
     fb: List[str] = ["feature kern {"]
 
     if glyph_glyph:
@@ -152,7 +145,7 @@ def build_kern_fea(groups: dict, kerning: dict) -> str:
             fb.append(f"    pos {first} {second} {value};")
 
     if mixed:
-        fb.append("    # Mixed glyph/class pairs (enumerate ??PairPosFormat 1)")
+        fb.append("    # Mixed glyph/class pairs (enumerate -> PairPosFormat 1)")
         for first, second, value in mixed:
             fb.append(f"    enumerate; pos {first} {second} {value};")
 
@@ -176,7 +169,7 @@ def inject_kern_feature(ufo_path: Path, force: bool = False) -> bool:
 
     Returns ``True`` if the file was modified.
     """
-    features_fea = ufo_path / "features.fea"
+    features_fea  = ufo_path / "features.fea"
     kerning_plist = ufo_path / "kerning.plist"
     groups_plist  = ufo_path / "groups.plist"
 
@@ -207,19 +200,21 @@ def inject_kern_feature(ufo_path: Path, force: bool = False) -> bool:
     groups  = _load_plist(groups_plist) if groups_plist.exists() else {}
 
     if not kerning:
-        print(f"  SKIP: {ufo_path.name} ??kerning.plist is empty")
+        print(f"  SKIP: {ufo_path.name} -- kerning.plist is empty")
         return False
 
     kern_fea = build_kern_fea(groups, kerning)
 
-    # Optionally strip an existing kern block before appending the new one.
+    # Strip existing kern block when force-regenerating.
     if kern_present and force:
-        # Remove the old kern class defs and feature block.
+        # Remove the class-def header block generated by this script.
         fea_text = re.sub(
-            r"\n# Kern side [^\n]+\n(?:[^\n]*\n)*?\n",
+            r"\n# Kern side 1.*?(?=\nfeature |\Z)",
             "\n",
             fea_text,
+            flags=re.DOTALL,
         )
+        # Remove the kern feature block itself.
         fea_text = re.sub(
             r"\nfeature kern [{].*?[}] kern;",
             "",
@@ -234,7 +229,7 @@ def inject_kern_feature(ufo_path: Path, force: bool = False) -> bool:
         kern_fea.count("\n    pos ")
         + kern_fea.count("\n    enumerate; pos ")
     )
-    print(f"  OK: {ufo_path.name} ??injected kern feature ({pair_count} pairs)")
+    print(f"  OK: {ufo_path.name} -- injected kern feature ({pair_count} pairs)")
     return True
 
 
@@ -273,7 +268,7 @@ def check_kern_structure_consistency(ufo_paths: List[Path]) -> None:
     if len(structures) < 2:
         return
 
-    reference_ufo  = next(iter(structures))
+    reference_ufo = next(iter(structures))
     ref_k1, ref_k2, ref_pairs = structures[reference_ufo]
 
     for ufo, (k1, k2, pairs) in structures.items():
@@ -308,19 +303,18 @@ def check_kern_structure_consistency(ufo_paths: List[Path]) -> None:
 #  CLI                                                                          #
 # --------------------------------------------------------------------------- #
 
-def parse_args() -> argparse.Namespace:
+def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
+    parser.add_argument(
+        "--ufo-dir",
+        metavar="DIR",
+        help="Directory whose immediate *.ufo children will be processed.",
+    )
+    parser.add_argument(
         "ufo",
         nargs="*",
         metavar="UFO",
         help="One or more UFO paths to process.",
-    )
-    group.add_argument(
-        "--ufo-dir",
-        metavar="DIR",
-        help="Directory whose immediate *.ufo children will be processed.",
     )
     parser.add_argument(
         "--force",
@@ -342,7 +336,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    args = parse_args()
+    args = _parse_args()
 
     if args.ufo_dir:
         ufo_dir = Path(args.ufo_dir)
@@ -350,16 +344,19 @@ def main() -> int:
         if not ufo_paths:
             print(f"No *.ufo directories found in {ufo_dir}")
             return 1
-    else:
+    elif args.ufo:
         ufo_paths = [Path(p) for p in args.ufo]
+    else:
+        print("ERROR: supply UFO paths or --ufo-dir.")
+        return 1
 
     if args.check_consistency and len(ufo_paths) > 1:
-        print("Checking kern structure consistency across UFOs ??)
+        print("Checking kern structure consistency across UFOs ...")
         check_kern_structure_consistency(ufo_paths)
 
     modified = 0
     for ufo in ufo_paths:
-        print(f"Processing {ufo.name} ??)
+        print(f"Processing {ufo.name} ...")
         if inject_kern_feature(ufo, force=args.force):
             modified += 1
 
