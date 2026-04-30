@@ -7,10 +7,19 @@ This folder provides a repeatable script to generate custom UFO instances from
 
 1. Builds master UFOs + a base designspace with `fontmake`
 2. Rewrites instances in a custom designspace from your YAML config and/or CLI values
-3. Builds instance UFOs with `makeinstancesufo` (`afdko`)
+3. Interpolates instance UFOs with `fontmake -o ufo --interpolate`
 4. Verifies each generated UFO contains `features.fea`
 
 The script validates all axis values and **fails hard** on out-of-range values.
+
+> **Why fontmake, not makeinstancesufo, for step 3?**
+> `MonaSans.glyphspackage` has a 4-axis structure with a discrete `ital` axis and
+> optical-size masters. `makeinstancesufo`/`ufoProcessor` raises
+> `"Locations must be unique"` on such sources because it cannot split the
+> interpolable sub-space. `fontmake --interpolate` uses `splitInterpolable`
+> internally and handles this correctly. The generated UFOs (cubic outlines,
+> self-contained `features.fea`) are exactly the format that `makeinstancesufo`
+> expects as **input sources** for any downstream fork-building step.
 
 ## Files
 

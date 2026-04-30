@@ -4,9 +4,15 @@
 Pipeline:
 1) Build master UFOs + base designspace from Glyphs source (fontmake)
 2) Create a custom designspace with only user-defined instances
-3) Generate instance UFOs with makeinstancesufo (afdko)
+3) Interpolate instance UFOs with fontmake (-o ufo --interpolate)
 
-This script is designed for repeatable iteration when tuning axis locations.
+fontmake is used for step 3 (not makeinstancesufo) because the source has a
+4-axis structure with a discrete ital axis and optical-size masters; fontmake's
+splitInterpolable handles this correctly, while makeinstancesufo/ufoProcessor
+raises "Locations must be unique" on such sources.
+
+Output UFOs have cubic outlines and fully-expanded features.fea — the format
+required as input sources for a subsequent makeinstancesufo run.
 """
 
 from __future__ import annotations
@@ -356,16 +362,6 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not execute external build/interpolation commands",
     )
-    parser.add_argument(
-        "--allow-autohint",
-        action="store_true",
-        help="Enable makeinstancesufo autohinting",
-    )
-    parser.add_argument(
-        "--allow-overlap-removal",
-        action="store_true",
-        help="Enable makeinstancesufo overlap removal",
-    )
     return parser.parse_args()
 
 
@@ -438,20 +434,27 @@ def main() -> int:
         out_instance_dir=final_instance_dir,
     )
 
-    miu_cmd = [
+    interpolate_cmd = [
         sys.executable,
         "-m",
-        "afdko.makeinstancesufo",
-        "--designspace",
+        "fontmake",
+        "-m",
         str(custom_designspace),
-        "--use-varlib",
+        "-o",
+        "ufo",
+        "--interpolate",
+        "--ufo-structure",
+        "package",
+        # NOTE: --expand-features-to-instances is intentionally omitted.
+        # It re-parses features.fea through feaLib, which fails on `condition`
+        # blocks (used for variable font feature variations in this source).
+        # Without it, fontmake copies the master's features.text verbatim into
+        # each instance — no parsing, full content preserved, condition blocks
+        # included intact.
+        "--output-dir",
+        str(final_instance_dir),
     ]
-    if not args.allow_autohint:
-        miu_cmd.append("--no-autohint")
-    if not args.allow_overlap_removal:
-        miu_cmd.append("--no-remove-overlap")
-
-    run_cmd(miu_cmd, cwd=repo_root, dry_run=args.dry_run)
+    run_cmd(interpolate_cmd, cwd=repo_root, dry_run=args.dry_run)
 
     if not args.dry_run:
         verify_features_files(expected_ufo_paths)
