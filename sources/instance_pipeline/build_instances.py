@@ -5,14 +5,16 @@ Pipeline:
 1) Build master UFOs + base designspace from Glyphs source (fontmake)
 2) Create a custom designspace with only user-defined instances
 3) Interpolate instance UFOs with fontmake (-o ufo --interpolate)
+4) Inject ``feature kern {}`` from kerning/groups plists into features.fea
 
 fontmake is used for step 3 (not makeinstancesufo) because the source has a
 4-axis structure with a discrete ital axis and optical-size masters; fontmake's
 splitInterpolable handles this correctly, while makeinstancesufo/ufoProcessor
 raises "Locations must be unique" on such sources.
 
-Output UFOs have cubic outlines and fully-expanded features.fea — the format
-required as input sources for a subsequent makeinstancesufo run.
+Output UFOs have cubic outlines and fully-expanded features.fea (including the
+kern feature) — the format required as input sources for a subsequent
+makeinstancesufo run.
 """
 
 from __future__ import annotations
@@ -26,6 +28,11 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
 from fontTools.designspaceLib import DesignSpaceDocument, InstanceDescriptor
+
+from inject_kern_feature import (
+    check_kern_structure_consistency,
+    inject_kern_feature,
+)
 
 try:
     import yaml
@@ -358,6 +365,16 @@ def parse_args() -> argparse.Namespace:
         help="Reuse existing base designspace and master UFOs in --work-dir",
     )
     parser.add_argument(
+        "--skip-kern-inject",
+        action="store_true",
+        help="Do not inject the kern feature into output UFOs.",
+    )
+    parser.add_argument(
+        "--force-kern-inject",
+        action="store_true",
+        help="Overwrite an existing kern feature block when injecting.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Do not execute external build/interpolation commands",
@@ -458,6 +475,18 @@ def main() -> int:
 
     if not args.dry_run:
         verify_features_files(expected_ufo_paths)
+
+    # ------------------------------------------------------------------ #
+    # Step 4 – inject feature kern from kerning/groups plists              #
+    # ------------------------------------------------------------------ #
+    if not args.dry_run and not args.skip_kern_inject:
+        print("\nInjecting kern feature into instance UFOs …")
+        existing = [p for p in expected_ufo_paths if p.is_dir()]
+        if len(existing) > 1:
+            check_kern_structure_consistency(existing)
+        for ufo_path in existing:
+            print(f"  Processing {ufo_path.name} …")
+            inject_kern_feature(ufo_path, force=args.force_kern_inject)
 
     print(f"Wrote custom designspace: {custom_designspace}")
     print(f"Instance UFO directory: {final_instance_dir}")
