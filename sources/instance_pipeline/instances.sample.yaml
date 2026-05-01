@@ -1,9 +1,34 @@
 # Custom instance config for sources/instance_pipeline/build_instances.py
 #
 # Notes:
-# - Axis values are interpreted in USER space and validated against designspace bounds.
+# - Axis values in `location` are interpreted in USER space and validated
+#   against designspace bounds.
+# - Axis values in `design_location` are DESIGN-SPACE values and bypass
+#   the user→design axis map entirely — useful for `opsz` (see below).
 # - Out-of-range values fail hard.
 # - Use presets for repeatable named test sets.
+#
+# ── opsz axis explanation ────────────────────────────────────────────────────
+# The opsz axis in this source has a non-monotonic user→design map:
+#
+#   user-space | design-space | approx blend
+#   -----------+--------------+-------------------------------------
+#       0      |    100       | 100% Display  ← the DEFAULT
+#      14      |     60.8     |  61% Display  ← opsz:14 in user space!
+#      20      |     44       |  43% Display  ← closest to Text in user space
+#      72      |     80       |  80% Display
+#     100      |    100       | 100% Display
+#
+# The Text masters live at design=1.  No user-space value reaches them.
+# To target Text or Display masters directly, use `design_location`:
+#
+#   design_location: { opsz: 1   }   → pure Text masters
+#   design_location: { opsz: 44  }   → ~43% Display (blended, closest from user space)
+#   design_location: { opsz: 100 }   → pure Display masters
+#
+# You can mix both dicts: `location` handles wdth/wght/ital in user space,
+# `design_location` handles opsz in design space.
+# ─────────────────────────────────────────────────────────────────────────────
 
 familyName: "Mona Sans Fork"
 
@@ -11,7 +36,7 @@ familyName: "Mona Sans Fork"
 # bounds:
 #   wdth: { min: 75, max: 125 }
 #   wght: { min: 100, max: 900 }
-#   opsz: { min: 12, max: 32 }
+#   opsz: { min: 0, max: 100 }
 #   ital: { min: 0, max: 1 }
 
 # Default instances loaded on every run.
@@ -20,31 +45,50 @@ familyName: "Mona Sans Fork"
 # instances: []
 instances:
   - name: "Fork Trial RegularText"
-    location: { wdth: 100, wght: 200, opsz: 16, ital: 0 }
+    location: { wdth: 100, wght: 200, ital: 0 }
+    design_location: { opsz: 1 }   # pure Text masters
 
-## python build_instances.py --preset mood_soft
+## python build_instances.py --preset zev_masters
 presets:
   zev_masters:
     - name: "ZevSans W200 S80"
-      location: { wdth: 80.0, wght: 200, opsz: 14, ital: 0 }
+      location: { wdth: 90.0, wght: 200, ital: 0 }
+      design_location: { opsz: 40 }
     - name: "ZevSans W900 S80"
-      location: { wdth: 80.0, wght: 900, opsz: 14, ital: 0 }
+      location: { wdth: 90.0, wght: 830, ital: 0 }
+      design_location: { opsz: 80 }
     - name: "ZevSans W200 S100"
-      location: { wdth: 100, wght: 200, opsz: 14, ital: 0 }
+      location: { wdth: 100, wght: 200, ital: 0 }
+      design_location: { opsz: 40 }
     - name: "ZevSans W900 S100"
-      location: { wdth: 100, wght: 900, opsz: 14, ital: 0 }
+      location: { wdth: 100, wght: 830, ital: 0 }
+      design_location: { opsz: 80 }
     - name: "ZevSans W200 S120"
-      location: { wdth: 120, wght: 200, opsz: 14, ital: 0 }
+      location: { wdth: 120, wght: 200, ital: 0 }
+      design_location: { opsz: 40 }
     - name: "ZevSans W900 S120"
-      location: { wdth: 120, wght: 900, opsz: 14, ital: 0 }
+      location: { wdth: 120, wght: 830, ital: 0 }
+      design_location: { opsz: 80 }
+
+  # Display-optimised set (opsz design=100)
+#  zev_display:
+#    - name: "ZevSans Display W200 S100"
+#      location: { wdth: 100, wght: 200, ital: 0 }
+#      design_location: { opsz: 100 }
+#    - name: "ZevSans Display W900 S100"
+#      location: { wdth: 100, wght: 900, ital: 0 }
+#      design_location: { opsz: 100 }
 
 #  mood_display:
 #    - name: "Fork Display Condensed Bold"
-#      location: { wdth: 87.5, wght: 700, opsz: 36, ital: 0 }
+#      location: { wdth: 87.5, wght: 700, ital: 0 }
+#      design_location: { opsz: 100 }
 #    - name: "Fork Display Expanded Black"
-#      location: { wdth: 120, wght: 850, opsz: 40, ital: 0 }
+#      location: { wdth: 120, wght: 850, ital: 0 }
+#      design_location: { opsz: 100 }
 #
 #  mood_italic_probe:
 #    - name: "Fork Italic Probe"
-#      location: { wdth: 100, wght: 300, opsz: 16, ital: 1 }
+#      location: { wdth: 100, wght: 300, ital: 1 }
+#      design_location: { opsz: 1 }
 #

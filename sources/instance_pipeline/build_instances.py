@@ -25,7 +25,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from fontTools.designspaceLib import DesignSpaceDocument, InstanceDescriptor
 
@@ -45,7 +45,12 @@ except ImportError as exc:  # pragma: no cover
 @dataclasses.dataclass
 class InstanceRequest:
     name: str
-    location: Dict[str, float]  # keyed by axis tag
+    location: Dict[str, float]  # keyed by axis tag — values in USER space
+    design_location: Dict[str, float] = dataclasses.field(default_factory=dict)
+    # design_location: axis tag → design-space value, bypasses the user→design
+    # axis map for that axis.  Use this when the user-space map is non-monotonic
+    # or otherwise inaccessible (e.g. opsz in this source has text masters at
+    # design=1 which cannot be reached through any user-space value).
 
 
 def parse_axis_assignment(raw: str) -> Tuple[str, float]:
@@ -96,15 +101,24 @@ def load_config(path: Path) -> dict:
     return data
 
 
+def _parse_instance_row(row: dict, context: str) -> InstanceRequest:
+    """Parse one YAML instance row into an InstanceRequest."""
+    name = row.get("name")
+    location = row.get("location", {})
+    design_location = row.get("design_location", {})
+    if not name or not isinstance(location, dict):
+        raise ValueError(f"{context}: each entry needs 'name' and 'location' mapping")
+    if not isinstance(design_location, dict):
+        raise ValueError(f"{context} '{name}': 'design_location' must be a mapping")
+    return InstanceRequest(
+        name=str(name),
+        location={k: float(v) for k, v in location.items()},
+        design_location={k: float(v) for k, v in design_location.items()},
+    )
+
+
 def config_instances(config: dict) -> List[InstanceRequest]:
-    result: List[InstanceRequest] = []
-    for row in config.get("instances", []):
-        name = row.get("name")
-        location = row.get("location", {})
-        if not name or not isinstance(location, dict):
-            raise ValueError("Each config instance needs 'name' and 'location' mapping")
-        result.append(InstanceRequest(name=name, location={k: float(v) for k, v in location.items()}))
-    return result
+    return [_parse_instance_row(row, "instances") for row in config.get("instances", [])]
 
 
 def preset_instances(config: dict, selected: Iterable[str]) -> List[InstanceRequest]:
@@ -121,18 +135,7 @@ def preset_instances(config: dict, selected: Iterable[str]) -> List[InstanceRequ
         if not isinstance(rows, list):
             raise ValueError(f"Preset '{name}' must be a list")
         for row in rows:
-            inst_name = row.get("name")
-            location = row.get("location", {})
-            if not inst_name or not isinstance(location, dict):
-                raise ValueError(
-                    f"Preset '{name}' entries need 'name' and 'location' mapping"
-                )
-            result.append(
-                InstanceRequest(
-                    name=inst_name,
-                    location={k: float(v) for k, v in location.items()},
-                )
-            )
+            result.append(_parse_instance_row(row, f"preset '{name}'"))
     return result
 
 
@@ -200,6 +203,104 @@ def map_user_to_design(ds: DesignSpaceDocument, axis_tag: str, value: float) -> 
     raise ValueError(f"Axis '{axis_tag}' is not present in designspace")
 
 
+def _canonicalize_axes(ds: DesignSpaceDocument) -> None:
+    """Strip user→design maps from axes whose sources extend beyond the mapped range.
+
+    When an axis has a non-monotonic or restricted user→design map (like the
+    ``opsz`` axis in this source), source masters can sit at design-space
+    coordinates that are outside the mapped range.  varLib normalises instance
+    locations against the *mapped* range, so those coordinates normalise to
+    values outside ``[-1, 1]`` and fontmake silently drops the instances.
+
+    This function fixes the problem by removing the map for affected axes and
+    resetting ``minimum / default / maximum`` to the true design-space extent
+    of the sources.  Because the custom designspace is only used for generating
+    static instances (not for end-user variable-font consumption), having
+    user-space == design-space is perfectly fine.
+    """
+    for axis in ds.axes:
+        if not axis.map:
+            continue  # no map → user space already equals design space
+
+        # Collect every design-space value this axis takes across all sources.
+        design_vals: List[float] = [
+            float(src.location[axis.name])
+            for src in ds.sources
+            if axis.name in (src.location or {})
+        ]
+        if not design_vals:
+            continue
+
+        d_min = min(design_vals)
+        d_max = max(design_vals)
+
+        # Mapped design-space range (what the old map covered).
+        mapped_design_vals = [float(output) for _, output in axis.map]
+        mapped_min = min(mapped_design_vals) if mapped_design_vals else d_min
+        mapped_max = max(mapped_design_vals) if mapped_design_vals else d_max
+
+        # Only act when sources actually extend *outside* the mapped range.
+        if d_min >= mapped_min and d_max <= mapped_max:
+            continue  # all sources reachable through existing map → leave alone
+
+        # Where does the current user-space default land in design space?
+        d_default = float(axis.map_forward(axis.default))
+        d_default = max(d_min, min(d_max, d_default))
+
+        axis.map = []
+        axis.minimum = d_min
+        axis.default = d_default
+        axis.maximum = d_max
+
+
+def _deduplicate_sources(ds: DesignSpaceDocument) -> None:
+    """Remove sources that share an identical design-space location.
+
+    Glyphs brace-layers can produce multiple source UFOs at the same design
+    coordinate when several glyphs carry brace layers with the same values.
+    varLib's variation model requires each source to occupy a unique location;
+    duplicates cause interpolation to fail with "Locations must be unique".
+
+    We keep the *first* source encountered at each location and discard
+    subsequent ones, logging the removed count.
+    """
+    seen: dict = {}
+    unique: List = []
+    for src in ds.sources:
+        key = tuple(sorted((k, float(v)) for k, v in (src.location or {}).items()))
+        if key not in seen:
+            seen[key] = src
+            unique.append(src)
+    removed = len(ds.sources) - len(unique)
+    if removed:
+        import logging as _logging
+        _logging.getLogger(__name__).info(
+            "Removed %d duplicate source(s) with identical design-space locations.",
+            removed,
+        )
+    ds.sources = unique
+
+
+def design_axis_bounds(ds: DesignSpaceDocument, axis_tag: str) -> Tuple[float, float]:
+    """Return (min, max) design-space values for *axis_tag* by scanning all sources.
+
+    This is more reliable than mapping the user-space extremes through a
+    potentially non-monotonic axis map.  For example, the opsz axis in this
+    source has a non-monotonic user→design map; the text masters sit at
+    design=1, which the user-space map never reaches.  Scanning sources gives
+    the true design-space extent.
+    """
+    axis_name = axis_name_for_tag(ds, axis_tag)
+    values: List[float] = []
+    for source in ds.sources:
+        loc = source.location or {}
+        if axis_name in loc:
+            values.append(float(loc[axis_name]))
+    if not values:
+        raise ValueError(f"No sources found with axis name '{axis_name}'")
+    return min(values), max(values)
+
+
 def resolve_bounds(config: dict, axis_tag: str, ds_bounds: Tuple[float, float]) -> Tuple[float, float]:
     configured = (config.get("bounds") or {}).get(axis_tag)
     if configured is None:
@@ -223,14 +324,21 @@ def resolve_bounds(config: dict, axis_tag: str, ds_bounds: Tuple[float, float]) 
 def apply_global_axis_overrides(
     requests: List[InstanceRequest],
     overrides: Dict[str, float],
+    design_overrides: Optional[Dict[str, float]] = None,
 ) -> List[InstanceRequest]:
-    if not overrides:
+    d_overrides: Dict[str, float] = design_overrides or {}
+    if not overrides and not d_overrides:
         return requests
     merged: List[InstanceRequest] = []
     for req in requests:
         location = dict(req.location)
         location.update(overrides)
-        merged.append(InstanceRequest(name=req.name, location=location))
+        # Remove any user-space entry for axes that are being overridden in design space
+        for tag in d_overrides:
+            location.pop(tag, None)
+        d_location = dict(req.design_location)
+        d_location.update(d_overrides)
+        merged.append(InstanceRequest(name=req.name, location=location, design_location=d_location))
     return merged
 
 
@@ -243,6 +351,20 @@ def build_custom_designspace(
     out_instance_dir: Path,
 ) -> List[Path]:
     ds = DesignSpaceDocument.fromfile(str(base_designspace_path))
+
+    # Ensure axes whose sources extend beyond the user→design map range are
+    # rewritten so that all design-space source positions are reachable by
+    # varLib's normaliser.  The opsz axis in this source is the key case:
+    # Text masters live at design=1, which is below the map's output minimum
+    # of 44, causing fontmake to silently drop instances whose opsz normalises
+    # outside [-1, 1].
+    _canonicalize_axes(ds)
+
+    # Remove sources that share an identical design-space location.  Glyphs
+    # brace-layers can generate duplicate source entries (e.g. multiple glyphs
+    # with brace-layer "{75, 300, 1, 1}"), which causes varLib to raise
+    # "Locations must be unique" when building the interpolation model.
+    _deduplicate_sources(ds)
 
     known_tags = {axis.tag for axis in ds.axes}
     if not known_tags:
@@ -257,22 +379,35 @@ def build_custom_designspace(
             raise ValueError(f"Duplicate instance name '{req.name}'")
         seen_names.add(req.name)
 
+        # Validate that all known axes are covered by either location or design_location
         for tag in known_tags:
-            if tag not in req.location:
+            if tag not in req.location and tag not in req.design_location:
                 raise ValueError(
                     f"Instance '{req.name}' is missing axis '{tag}'. "
+                    f"Provide it in 'location' (user space) or 'design_location' (design space). "
                     f"Required axes: {', '.join(sorted(known_tags))}"
                 )
 
         for tag in req.location.keys():
             if tag not in known_tags:
                 raise ValueError(
-                    f"Instance '{req.name}' uses unknown axis '{tag}'. "
+                    f"Instance '{req.name}' uses unknown axis '{tag}' in location. "
                     f"Known: {', '.join(sorted(known_tags))}"
                 )
 
+        for tag in req.design_location.keys():
+            if tag not in known_tags:
+                raise ValueError(
+                    f"Instance '{req.name}' uses unknown axis '{tag}' in design_location. "
+                    f"Known: {', '.join(sorted(known_tags))}"
+                )
+
+        # Build design-space location: start from user-space location (mapped)
         design_location: Dict[str, float] = {}
         for tag, user_value in req.location.items():
+            if tag in req.design_location:
+                # design_location takes precedence; skip user-space processing
+                continue
             ds_minmax = axis_bounds_for_tag(ds, tag)
             min_value, max_value = resolve_bounds(config, tag, ds_minmax)
             if user_value < min_value or user_value > max_value:
@@ -282,6 +417,17 @@ def build_custom_designspace(
                 )
             axis_name = axis_name_for_tag(ds, tag)
             design_location[axis_name] = map_user_to_design(ds, tag, user_value)
+
+        # Apply design_location overrides (raw design-space values, no mapping)
+        for tag, design_value in req.design_location.items():
+            d_min, d_max = design_axis_bounds(ds, tag)
+            if design_value < d_min or design_value > d_max:
+                raise ValueError(
+                    f"Out-of-range design-space value for '{req.name}' axis {tag}: {design_value}. "
+                    f"Design-space bounds (from sources): {d_min}..{d_max}"
+                )
+            axis_name = axis_name_for_tag(ds, tag)
+            design_location[axis_name] = design_value
 
         style_name = req.name
         ps_name = sanitize_for_ps_name(f"{family_name}-{style_name}")
@@ -352,7 +498,19 @@ def parse_args() -> argparse.Namespace:
         action="append",
         default=[],
         metavar="AXIS=VALUE",
-        help="Global axis override applied to all selected instances. Repeatable.",
+        help="Global axis override applied to all selected instances (user space). Repeatable.",
+    )
+    parser.add_argument(
+        "--set-design",
+        action="append",
+        default=[],
+        metavar="AXIS=VALUE",
+        help=(
+            "Global design-space axis override applied to all instances. "
+            "Bypasses the user→design axis map. "
+            "Useful for opsz: use opsz=1 for Text masters, opsz=100 for Display. "
+            "Repeatable."
+        ),
     )
     parser.add_argument(
         "--work-dir",
@@ -408,7 +566,11 @@ def main() -> int:
     for raw in args.set:
         tag, value = parse_axis_assignment(raw)
         overrides[tag] = value
-    requests = apply_global_axis_overrides(requests, overrides)
+    design_overrides: Dict[str, float] = {}
+    for raw in args.set_design:
+        tag, value = parse_axis_assignment(raw)
+        design_overrides[tag] = value
+    requests = apply_global_axis_overrides(requests, overrides, design_overrides)
 
     if not requests:
         raise SystemExit(
