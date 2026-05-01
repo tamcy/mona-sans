@@ -24,21 +24,27 @@ instances:
 
 ## python build_instances.py --preset mood_soft
 presets:
-  mood_soft:
-    - name: "Fork Soft Condensed Light"
-      location: { wdth: 90, wght: 200, opsz: 14, ital: 0 }
-    - name: "Fork Soft Regular"
-      location: { wdth: 100, wght: 250, opsz: 16, ital: 0 }
-    - name: "Fork Soft Expanded Semibold"
-      location: { wdth: 112.5, wght: 580, opsz: 18, ital: 0 }
+  zev_masters:
+    - name: "ZevSans W200 S80"
+      location: { wdth: 80.0, wght: 200, opsz: 14, ital: 0 }
+    - name: "ZevSans W900 S80"
+      location: { wdth: 80.0, wght: 900, opsz: 14, ital: 0 }
+    - name: "ZevSans W200 S100"
+      location: { wdth: 100, wght: 200, opsz: 14, ital: 0 }
+    - name: "ZevSans W900 S100"
+      location: { wdth: 100, wght: 900, opsz: 14, ital: 0 }
+    - name: "ZevSans W200 S120"
+      location: { wdth: 120, wght: 200, opsz: 14, ital: 0 }
+    - name: "ZevSans W900 S120"
+      location: { wdth: 120, wght: 900, opsz: 14, ital: 0 }
 
-  mood_display:
-    - name: "Fork Display Condensed Bold"
-      location: { wdth: 87.5, wght: 700, opsz: 36, ital: 0 }
-    - name: "Fork Display Expanded Black"
-      location: { wdth: 120, wght: 850, opsz: 40, ital: 0 }
-
-  mood_italic_probe:
-    - name: "Fork Italic Probe"
-      location: { wdth: 100, wght: 300, opsz: 16, ital: 1 }
-
+#  mood_display:
+#    - name: "Fork Display Condensed Bold"
+#      location: { wdth: 87.5, wght: 700, opsz: 36, ital: 0 }
+#    - name: "Fork Display Expanded Black"
+#      location: { wdth: 120, wght: 850, opsz: 40, ital: 0 }
+#
+#  mood_italic_probe:
+#    - name: "Fork Italic Probe"
+#      location: { wdth: 100, wght: 300, opsz: 16, ital: 1 }
+#
