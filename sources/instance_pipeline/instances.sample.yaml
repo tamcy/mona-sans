@@ -51,11 +51,11 @@ instances:
 ## python build_instances.py --preset zev_masters
 presets:
   zev_masters:
-    - name: "ZevSans W200 S80"
-      location: { wdth: 90.0, wght: 200, ital: 0 }
+    - name: "ZevSans W200 S75"
+      location: { wdth: 85.0, wght: 200, ital: 0 }
       design_location: { opsz: 40 }
-    - name: "ZevSans W900 S80"
-      location: { wdth: 90.0, wght: 830, ital: 0 }
+    - name: "ZevSans W900 S75"
+      location: { wdth: 85.0, wght: 830, ital: 0 }
       design_location: { opsz: 80 }
     - name: "ZevSans W200 S100"
       location: { wdth: 100, wght: 200, ital: 0 }
@@ -63,11 +63,11 @@ presets:
     - name: "ZevSans W900 S100"
       location: { wdth: 100, wght: 830, ital: 0 }
       design_location: { opsz: 80 }
-    - name: "ZevSans W200 S120"
-      location: { wdth: 120, wght: 200, ital: 0 }
+    - name: "ZevSans W200 S125"
+      location: { wdth: 125, wght: 200, ital: 0 }
       design_location: { opsz: 40 }
-    - name: "ZevSans W900 S120"
-      location: { wdth: 120, wght: 830, ital: 0 }
+    - name: "ZevSans W900 S125"
+      location: { wdth: 125, wght: 830, ital: 0 }
       design_location: { opsz: 80 }
 
   # Display-optimised set (opsz design=100)
